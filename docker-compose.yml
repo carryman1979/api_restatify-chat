@@ -1,0 +1,11 @@
+services:
+  api-chat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api_restatify-chat
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8089:8089"
+    restart: unless-stopped

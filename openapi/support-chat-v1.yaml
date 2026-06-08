@@ -1,0 +1,23 @@
+openapi: 3.1.0
+info:
+  title: api_restatify-chat
+  version: 0.1.0
+paths:
+  /health:
+    get:
+      summary: Healthcheck
+      responses:
+        "200":
+          description: Service healthy
+  /v1/auth/login:
+    post:
+      summary: Login (stub)
+      responses:
+        "200":
+          description: Login success
+  /v1/support/conversations:
+    get:
+      summary: List conversations
+      responses:
+        "200":
+          description: Conversation list
