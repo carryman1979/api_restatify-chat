@@ -2,22 +2,239 @@ openapi: 3.1.0
 info:
   title: api_restatify-chat
   version: 0.1.0
+servers:
+  - url: http://localhost:8089
+  - url: https://api.restatify.tech
 paths:
   /health:
     get:
       summary: Healthcheck
+      tags:
+        - health
       responses:
         "200":
           description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
   /v1/auth/login:
     post:
-      summary: Login (stub)
+      summary: Login endpoint with MFA support (stub)
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+              required:
+                - email
+                - password
       responses:
         "200":
-          description: Login success
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  token_type:
+                    type: string
+                    example: bearer
+                  mfa_required:
+                    type: boolean
   /v1/support/conversations:
     get:
-      summary: List conversations
+      summary: List support conversations
+      tags:
+        - support-chat
+      security:
+        - ApiKeyHeader: []
       responses:
         "200":
-          description: Conversation list
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    source_url:
+                      type: string
+                    updated_at_gmt:
+                      type: string
+                      format: date-time
+                    unread_count:
+                      type: integer
+        "401":
+          description: Unauthorized (missing or invalid API key)
+  /v1/support/conversations/{conversation_id}/messages:
+    get:
+      summary: Get conversation messages with cursor-based pagination
+      tags:
+        - support-chat
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: conversation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 3
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Cursor for pagination (base64-encoded signed payload)
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: desc
+      responses:
+        "200":
+          description: Messages page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        message_id:
+                          type: string
+                        conversation_id:
+                          type: string
+                        sender:
+                          type: string
+                        message:
+                          type: string
+                        time_gmt:
+                          type: string
+                          format: date-time
+                  next_cursor:
+                    type: string
+                    nullable: true
+                  has_more:
+                    type: boolean
+        "400":
+          description: Invalid cursor or parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - invalid_cursor
+                      message:
+                        type: string
+        "401":
+          description: Unauthorized (missing or invalid API key)
+        "410":
+          description: Cursor expired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - cursor_expired
+                      message:
+                        type: string
+  /v1/support/conversations/{conversation_id}/reply:
+    post:
+      summary: Send reply to conversation
+      tags:
+        - support-chat
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: conversation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 3
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+              required:
+                - message
+      responses:
+        "200":
+          description: Reply sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversation_id:
+                    type: string
+                  sender:
+                    type: string
+                    example: support
+                  message:
+                    type: string
+                  time_gmt:
+                    type: string
+                    format: date-time
+        "401":
+          description: Unauthorized (missing or invalid API key)
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key

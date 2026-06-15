@@ -9,6 +9,11 @@ from pydantic import BaseModel
 
 from src.shared_restatify_api.config.settings import get_settings
 from src.shared_restatify_api.security.api_key import require_api_key
+from src.app.modules.support_chat.wp_chat_store_bridge import (
+    WordPressBridgeConfig,
+    WordPressBridgeError,
+    WordPressChatStoreBridge,
+)
 
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
@@ -47,8 +52,14 @@ class ConversationMessagesPage(BaseModel):
     has_more: bool
 
 
-_CONVERSATIONS: dict[str, ConversationSummary] = {}
-_MESSAGES: dict[str, list[dict[str, str]]] = {}
+wp_bridge = WordPressChatStoreBridge(
+    WordPressBridgeConfig(
+        php_executable=settings.wp_php_executable,
+        wp_load_path=settings.wp_load_path,
+        store_option_key=settings.wp_chat_store_option_key,
+        command_timeout_seconds=settings.wp_bridge_timeout_seconds,
+    )
+)
 
 
 def _sign_payload(payload: str) -> str:
@@ -112,34 +123,68 @@ def _decode_cursor(cursor: str) -> tuple[str, str]:
         ) from exc
 
 
-def _seed_demo_data() -> None:
-    if _CONVERSATIONS:
-        return
+def _load_store_or_raise() -> dict[str, dict]:
+    try:
+        return wp_bridge.load_store()
+    except WordPressBridgeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "wp_bridge_failed", "message": str(exc)},
+        ) from exc
 
-    now = datetime.now(UTC).isoformat()
-    demo = ConversationSummary(
-        id="conv_demo_1",
-        source_url="https://example.restatify.tech",
-        updated_at_gmt=now,
-        unread_count=1,
+
+def _normalize_messages(conversation_id: str, conversation: dict) -> list[dict[str, str]]:
+    raw_messages = conversation.get("messages")
+    if not isinstance(raw_messages, list):
+        return []
+
+    normalized: list[dict[str, str]] = []
+    for index, raw_item in enumerate(raw_messages, start=1):
+        if not isinstance(raw_item, dict):
+            continue
+
+        sender = str(raw_item.get("sender", "visitor"))
+        message = str(raw_item.get("message", ""))
+        time_gmt = str(raw_item.get("time_gmt", ""))
+
+        normalized.append(
+            {
+                "message_id": f"msg_{index}",
+                "conversation_id": conversation_id,
+                "sender": sender,
+                "message": message,
+                "time_gmt": time_gmt,
+            }
+        )
+
+    return normalized
+
+
+def _to_summary(conversation_id: str, conversation: dict) -> ConversationSummary:
+    source_url = str(conversation.get("source_url", ""))
+    updated_at_gmt = str(conversation.get("updated_at_gmt", ""))
+    messages = conversation.get("messages")
+    unread_count = 0
+    if isinstance(messages, list):
+        unread_count = sum(
+            1
+            for item in messages
+            if isinstance(item, dict) and str(item.get("sender", "")) == "visitor"
+        )
+
+    return ConversationSummary(
+        id=conversation_id,
+        source_url=source_url,
+        updated_at_gmt=updated_at_gmt,
+        unread_count=unread_count,
     )
-
-    _CONVERSATIONS[demo.id] = demo
-    _MESSAGES[demo.id] = [
-        {
-            "message_id": "msg_1",
-            "conversation_id": demo.id,
-            "sender": "visitor",
-            "message": "Hi support team, I need help with booking sync.",
-            "time_gmt": now,
-        }
-    ]
 
 
 @router.get("/conversations", response_model=list[ConversationSummary])
 def list_conversations() -> list[ConversationSummary]:
-    _seed_demo_data()
-    return list(_CONVERSATIONS.values())
+    store = _load_store_or_raise()
+    summaries = [_to_summary(conversation_id, conversation) for conversation_id, conversation in store.items()]
+    return sorted(summaries, key=lambda item: item.updated_at_gmt, reverse=True)
 
 
 @router.get(
@@ -152,8 +197,9 @@ def list_messages(
     limit: int = Query(50, ge=1, le=200),
     order: str = Query("desc", pattern="^(asc|desc)$"),
 ) -> ConversationMessagesPage:
-    _seed_demo_data()
-    messages = _MESSAGES.get(conversation_id, [])
+    store = _load_store_or_raise()
+    conversation = store.get(conversation_id, {})
+    messages = _normalize_messages(conversation_id, conversation)
     reverse = order == "desc"
     sorted_messages = sorted(
         messages,
@@ -198,34 +244,24 @@ def send_reply(
     payload: ReplyRequest,
     conversation_id: str = Path(..., min_length=3),
 ) -> ReplyResponse:
-    _seed_demo_data()
+    try:
+        result = wp_bridge.append_support_message(conversation_id=conversation_id, message=payload.message)
+    except WordPressBridgeError as exc:
+        message = str(exc)
+        if "Conversation not found" in message:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "conversation_not_found", "message": message},
+            ) from exc
 
-    now = datetime.now(UTC).isoformat()
-    reply = ReplyResponse(
-        conversation_id=conversation_id,
-        sender="support",
-        message=payload.message,
-        time_gmt=now,
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "wp_bridge_failed", "message": message},
+        ) from exc
+
+    return ReplyResponse(
+        conversation_id=result["conversation_id"],
+        sender=result["sender"],
+        message=result["message"],
+        time_gmt=result["time_gmt"],
     )
-
-    items = _MESSAGES.setdefault(conversation_id, [])
-    items.append(
-        {
-            "message_id": f"msg_{len(items) + 1}",
-            "conversation_id": conversation_id,
-            "sender": reply.sender,
-            "message": reply.message,
-            "time_gmt": reply.time_gmt,
-        }
-    )
-
-    if conversation_id in _CONVERSATIONS:
-        current = _CONVERSATIONS[conversation_id]
-        _CONVERSATIONS[conversation_id] = ConversationSummary(
-            id=current.id,
-            source_url=current.source_url,
-            updated_at_gmt=now,
-            unread_count=current.unread_count,
-        )
-
-    return reply

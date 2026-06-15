@@ -30,6 +30,58 @@ pip install -e .
 uvicorn src.app.main:app --host 0.0.0.0 --port 8089 --reload
 ```
 
+## Scripted setup and run (recommended)
+
+The repository now includes scripts for both standalone Python execution and Docker.
+
+### Linux/macOS (bash)
+
+Install dependencies / prepare runtime:
+
+```bash
+./install.sh standalone
+```
+
+Start standalone API:
+
+```bash
+./run.sh standalone
+```
+
+Build/start with Docker:
+
+```bash
+./install.sh docker
+./run.sh docker
+```
+
+### Windows (PowerShell)
+
+Install dependencies / prepare runtime:
+
+```powershell
+.\install.ps1 -Mode standalone
+```
+
+Start standalone API:
+
+```powershell
+.\run.ps1 -Mode standalone
+```
+
+Build/start with Docker:
+
+```powershell
+.\install.ps1 -Mode docker
+.\run.ps1 -Mode docker
+```
+
+### Notes
+
+- If `.env` is missing, scripts auto-create it from `.env.example`.
+- Default standalone bind: `127.0.0.1:8089`.
+- On Linux/macOS, make scripts executable once: `chmod +x install.sh run.sh`.
+
 ## Run (docker)
 
 ```bash

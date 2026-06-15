@@ -8,10 +8,14 @@ class Settings(BaseSettings):
 
     app_name: str = "api_restatify-chat"
     app_env: str = "dev"
-    api_key: str = "change-me"
+    api_key: str = "dev-support-api-key"
     cursor_signing_key: str = "change-me-cursor-signing-key"
     cursor_ttl_seconds: int = 900
     log_level: str = "INFO"
+    wp_load_path: str = "../wp-load.php"
+    wp_php_executable: str = "php"
+    wp_chat_store_option_key: str = "restatify_ai_multichat_conversations"
+    wp_bridge_timeout_seconds: int = 15
 
 
 @lru_cache(maxsize=1)
