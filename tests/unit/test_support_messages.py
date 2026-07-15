@@ -17,6 +17,7 @@ class _FakeBridge:
                 "id": "conv_test_1",
                 "source_url": "https://example.test",
                 "updated_at_gmt": "2026-06-15T10:00:00+00:00",
+                "ai_mode": "both",
                 "messages": [
                     {
                         "sender": "visitor",
@@ -26,6 +27,7 @@ class _FakeBridge:
                 ],
             }
         }
+        self.booking_overlay_available = True
 
     def load_store(self) -> dict[str, dict]:
         return self.store
@@ -39,6 +41,51 @@ class _FakeBridge:
         }
         conversation.setdefault("messages", []).append(entry)
         conversation["updated_at_gmt"] = entry["time_gmt"]
+        return {
+            "conversation_id": conversation_id,
+            "sender": entry["sender"],
+            "message": entry["message"],
+            "time_gmt": entry["time_gmt"],
+        }
+
+    def get_conversation_tools(self, conversation_id: str) -> dict[str, object]:
+        if conversation_id not in self.store:
+            raise support_chat_router.WordPressBridgeError("Conversation not found")
+
+        return {
+            "conversation_id": conversation_id,
+            "ai_mode": self.store[conversation_id].get("ai_mode", "both"),
+            "booking_overlay_available": self.booking_overlay_available,
+        }
+
+    def set_conversation_ai_mode(self, conversation_id: str, ai_mode: str) -> str:
+        if conversation_id not in self.store:
+            raise support_chat_router.WordPressBridgeError("Conversation not found")
+
+        self.store[conversation_id]["ai_mode"] = ai_mode
+        return ai_mode
+
+    def delete_conversation(self, conversation_id: str) -> dict[str, bool]:
+        if conversation_id not in self.store:
+            return {"deleted": True, "already_gone": True}
+
+        del self.store[conversation_id]
+        return {"deleted": True, "already_gone": False}
+
+    def trigger_booking_overlay(self, conversation_id: str) -> dict[str, str]:
+        if conversation_id not in self.store:
+            raise support_chat_router.WordPressBridgeError("Conversation not found")
+
+        if not self.booking_overlay_available:
+            raise support_chat_router.WordPressBridgeError("Booking overlay unavailable")
+
+        entry = {
+            "sender": "support",
+            "message": "[[RESTATIFY_BOOKING_OPEN]] booking overlay open",
+            "time_gmt": "2026-06-15T10:03:00+00:00",
+        }
+        self.store[conversation_id].setdefault("messages", []).append(entry)
+        self.store[conversation_id]["updated_at_gmt"] = entry["time_gmt"]
         return {
             "conversation_id": conversation_id,
             "sender": entry["sender"],
@@ -136,4 +183,71 @@ def test_support_messages_returns_cursor_expired_error() -> None:
         assert expired.json()["detail"]["code"] == "cursor_expired"
     finally:
         support_chat_router.settings.cursor_ttl_seconds = original_ttl
+        _restore_bridge(original_bridge)
+
+
+def test_conversation_tools_get_and_set_ai_mode() -> None:
+    original_bridge = _install_fake_bridge()
+    try:
+        response = client.get(
+            "/v1/support/conversations/conv_test_1/tools",
+            headers=HEADERS,
+        )
+        assert response.status_code == 200
+        assert response.json()["ai_mode"] == "both"
+
+        update = client.put(
+            "/v1/support/conversations/conv_test_1/ai-mode",
+            headers=HEADERS,
+            json={"ai_mode": "visitor"},
+        )
+        assert update.status_code == 200
+        assert update.json()["ai_mode"] == "visitor"
+
+        after = client.get(
+            "/v1/support/conversations/conv_test_1/tools",
+            headers=HEADERS,
+        )
+        assert after.status_code == 200
+        assert after.json()["ai_mode"] == "visitor"
+    finally:
+        _restore_bridge(original_bridge)
+
+
+def test_conversation_open_booking_overlay() -> None:
+    original_bridge = _install_fake_bridge()
+    try:
+        response = client.post(
+            "/v1/support/conversations/conv_test_1/open-booking-overlay",
+            headers=HEADERS,
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["sender"] == "support"
+        assert "RESTATIFY_BOOKING_OPEN" in payload["message"]
+    finally:
+        _restore_bridge(original_bridge)
+
+
+def test_conversation_delete_endpoint() -> None:
+    original_bridge = _install_fake_bridge()
+    try:
+        response = client.delete(
+            "/v1/support/conversations/conv_test_1",
+            headers=HEADERS,
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["deleted"] is True
+        assert payload["already_gone"] is False
+
+        second = client.delete(
+            "/v1/support/conversations/conv_test_1",
+            headers=HEADERS,
+        )
+        assert second.status_code == 200
+        second_payload = second.json()
+        assert second_payload["deleted"] is True
+        assert second_payload["already_gone"] is True
+    finally:
         _restore_bridge(original_bridge)

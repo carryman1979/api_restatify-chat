@@ -13,13 +13,20 @@ _last_fetch: float = 0.0
 _CACHE_TTL_SECONDS = 60
 
 
-def get_valid_wp_api_keys() -> frozenset[str]:
+def invalidate_wp_api_keys_cache() -> None:
+    global _cached_keys, _last_fetch
+    with _cache_lock:
+        _cached_keys = frozenset()
+        _last_fetch = 0.0
+
+
+def get_valid_wp_api_keys(force_refresh: bool = False) -> frozenset[str]:
     """Returns WP-stored API keys, refreshed at most every 60 seconds."""
     global _cached_keys, _last_fetch
 
     now = time.monotonic()
     with _cache_lock:
-        if now - _last_fetch < _CACHE_TTL_SECONDS:
+        if not force_refresh and now - _last_fetch < _CACHE_TTL_SECONDS:
             return _cached_keys
 
     try:
@@ -37,6 +44,10 @@ def get_valid_wp_api_keys() -> frozenset[str]:
                 wp_load_path=cfg.wp_load_path,
                 store_option_key=cfg.wp_chat_store_option_key,
                 command_timeout_seconds=cfg.wp_bridge_timeout_seconds,
+                db_host_override=cfg.wp_db_host_override,
+                db_user_override=cfg.wp_db_user_override,
+                db_password_override=cfg.wp_db_password_override,
+                db_name_override=cfg.wp_db_name_override,
             )
         )
         keys = bridge.load_api_keys()

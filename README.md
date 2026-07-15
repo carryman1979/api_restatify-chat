@@ -11,9 +11,11 @@ Public Support Chat API for Restatify support operations.
 ## Current MVP Scope
 
 - Health endpoint
-- Auth stub endpoint (to be replaced with full MFA flow)
-- Support conversation list and reply stubs
-- API key middleware helper
+- WordPress credential login and support API key generation
+- Support conversation list and message retrieval via WordPress bridge
+- Support reply, AI mode, booking overlay trigger, and delete operations
+- WebSocket updates for message and conversation events
+- API key middleware with WordPress-backed key validation
 
 ## Run (local)
 
@@ -92,10 +94,24 @@ docker compose up --build
 
 - `GET /health`
 - `POST /v1/auth/login`
+- `POST /v1/auth/generate-api-key`
 - `GET /v1/support/conversations`
+- `GET /v1/support/conversations/{conversation_id}/messages`
 - `POST /v1/support/conversations/{conversation_id}/reply`
+- `PUT /v1/support/conversations/{conversation_id}/ai-mode`
+- `DELETE /v1/support/conversations/{conversation_id}`
+- `GET /v1/support/ws/updates`
 
 ## Notes
 
-- This is the initial scaffold for implementation start.
-- Security and auth are intentionally minimal placeholders and will be hardened next.
+- API behavior now follows the WordPress chat store as source of truth.
+- Local Docker setup is Rancher Desktop compatible via `docker compose`.
+
+## Release Notes
+
+### v0.2.0
+
+- Added support WebSocket update stream with reconnect-friendly event payloads.
+- Added store-delta watcher to publish visitor message and inactivity deletion updates.
+- Expanded support API operations (messages, AI mode, delete, booking trigger).
+- Hardened API key lifecycle and bridge-backed validation path.
