@@ -1,14 +1,17 @@
 from datetime import UTC, datetime
+import asyncio
 import base64
 import hashlib
 import hmac
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 
 from src.shared_restatify_api.config.settings import get_settings
 from src.shared_restatify_api.security.api_key import require_api_key
+from src.app.modules.support_chat.events import get_event_manager
 from src.app.modules.support_chat.wp_chat_store_bridge import (
     WordPressBridgeConfig,
     WordPressBridgeError,
@@ -18,6 +21,7 @@ from src.app.modules.support_chat.wp_chat_store_bridge import (
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class ConversationSummary(BaseModel):
@@ -52,12 +56,36 @@ class ConversationMessagesPage(BaseModel):
     has_more: bool
 
 
+class ConversationToolsResponse(BaseModel):
+    conversation_id: str
+    ai_mode: str
+    booking_overlay_available: bool
+
+
+class SetConversationAiModeRequest(BaseModel):
+    ai_mode: str
+
+
+class SetConversationAiModeResponse(BaseModel):
+    conversation_id: str
+    ai_mode: str
+
+
+class DeleteConversationResponse(BaseModel):
+    deleted: bool
+    already_gone: bool
+
+
 wp_bridge = WordPressChatStoreBridge(
     WordPressBridgeConfig(
         php_executable=settings.wp_php_executable,
         wp_load_path=settings.wp_load_path,
         store_option_key=settings.wp_chat_store_option_key,
         command_timeout_seconds=settings.wp_bridge_timeout_seconds,
+        db_host_override=settings.wp_db_host_override,
+        db_user_override=settings.wp_db_user_override,
+        db_password_override=settings.wp_db_password_override,
+        db_name_override=settings.wp_db_name_override,
     )
 )
 
@@ -240,12 +268,16 @@ def list_messages(
     "/conversations/{conversation_id}/reply",
     response_model=ReplyResponse,
 )
-def send_reply(
+async def send_reply(
     payload: ReplyRequest,
     conversation_id: str = Path(..., min_length=3),
 ) -> ReplyResponse:
     try:
-        result = wp_bridge.append_support_message(conversation_id=conversation_id, message=payload.message)
+        result = await asyncio.to_thread(
+            wp_bridge.append_support_message,
+            conversation_id=conversation_id,
+            message=payload.message,
+        )
     except WordPressBridgeError as exc:
         message = str(exc)
         if "Conversation not found" in message:
@@ -258,6 +290,158 @@ def send_reply(
             status_code=502,
             detail={"code": "wp_bridge_failed", "message": message},
         ) from exc
+
+    await get_event_manager().publish_message_added(
+        conversation_id=result["conversation_id"],
+        sender=result["sender"],
+        message=result["message"],
+        time_gmt=result["time_gmt"],
+    )
+
+    ai_entry = result.get("ai_entry") if isinstance(result, dict) else None
+    ai_generated = False
+    if isinstance(ai_entry, dict):
+        ai_sender = str(ai_entry.get("sender", "ai"))
+        ai_message = str(ai_entry.get("message", ""))
+        ai_time_gmt = str(ai_entry.get("time_gmt", ""))
+        if ai_message:
+            ai_generated = True
+            await get_event_manager().publish_message_added(
+                conversation_id=result["conversation_id"],
+                sender=ai_sender,
+                message=ai_message,
+                time_gmt=ai_time_gmt,
+            )
+
+    logger.info(
+        "Support reply accepted. conversation_id=%s ai_generated=%s",
+        result["conversation_id"],
+        ai_generated,
+    )
+
+    return ReplyResponse(
+        conversation_id=result["conversation_id"],
+        sender=result["sender"],
+        message=result["message"],
+        time_gmt=result["time_gmt"],
+    )
+
+
+@router.get(
+    "/conversations/{conversation_id}/tools",
+    response_model=ConversationToolsResponse,
+)
+def get_conversation_tools(
+    conversation_id: str = Path(..., min_length=3),
+) -> ConversationToolsResponse:
+    try:
+        result = wp_bridge.get_conversation_tools(conversation_id)
+    except WordPressBridgeError as exc:
+        message = str(exc)
+        if "Conversation not found" in message:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "conversation_not_found", "message": message},
+            ) from exc
+
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "wp_bridge_failed", "message": message},
+        ) from exc
+
+    return ConversationToolsResponse(
+        conversation_id=conversation_id,
+        ai_mode=str(result.get("ai_mode", "both")),
+        booking_overlay_available=bool(result.get("booking_overlay_available", False)),
+    )
+
+
+@router.put(
+    "/conversations/{conversation_id}/ai-mode",
+    response_model=SetConversationAiModeResponse,
+)
+def set_conversation_ai_mode(
+    payload: SetConversationAiModeRequest,
+    conversation_id: str = Path(..., min_length=3),
+) -> SetConversationAiModeResponse:
+    try:
+        ai_mode = wp_bridge.set_conversation_ai_mode(conversation_id, payload.ai_mode)
+    except WordPressBridgeError as exc:
+        message = str(exc)
+        if "Conversation not found" in message:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "conversation_not_found", "message": message},
+            ) from exc
+
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "wp_bridge_failed", "message": message},
+        ) from exc
+
+    return SetConversationAiModeResponse(conversation_id=conversation_id, ai_mode=ai_mode)
+
+
+@router.delete(
+    "/conversations/{conversation_id}",
+    response_model=DeleteConversationResponse,
+)
+async def delete_conversation(
+    conversation_id: str = Path(..., min_length=3),
+) -> DeleteConversationResponse:
+    try:
+        result = wp_bridge.delete_conversation(conversation_id)
+    except WordPressBridgeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "wp_bridge_failed", "message": str(exc)},
+        ) from exc
+
+    deleted = bool(result.get("deleted", False))
+    already_gone = bool(result.get("already_gone", False))
+
+    if deleted and not already_gone:
+        await get_event_manager().publish_conversation_deleted(conversation_id)
+
+    return DeleteConversationResponse(
+        deleted=deleted,
+        already_gone=already_gone,
+    )
+
+
+@router.post(
+    "/conversations/{conversation_id}/open-booking-overlay",
+    response_model=ReplyResponse,
+)
+async def open_booking_overlay(
+    conversation_id: str = Path(..., min_length=3),
+) -> ReplyResponse:
+    try:
+        result = await asyncio.to_thread(wp_bridge.trigger_booking_overlay, conversation_id)
+    except WordPressBridgeError as exc:
+        message = str(exc)
+        if "Conversation not found" in message:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "conversation_not_found", "message": message},
+            ) from exc
+        if "Booking overlay unavailable" in message:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "booking_overlay_unavailable", "message": message},
+            ) from exc
+
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "wp_bridge_failed", "message": message},
+        ) from exc
+
+    await get_event_manager().publish_message_added(
+        conversation_id=result["conversation_id"],
+        sender=result["sender"],
+        message=result["message"],
+        time_gmt=result["time_gmt"],
+    )
 
     return ReplyResponse(
         conversation_id=result["conversation_id"],

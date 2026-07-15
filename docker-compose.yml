@@ -6,6 +6,12 @@ services:
     container_name: api_restatify-chat
     env_file:
       - .env
+    environment:
+      WP_PHP_EXECUTABLE: php
+      WP_LOAD_PATH: /workspace/wp-load.php
+      WP_DB_HOST_OVERRIDE: host.docker.internal
     ports:
       - "127.0.0.1:8089:8089"
+    volumes:
+      - ../:/workspace:ro
     restart: unless-stopped

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from src.shared_restatify_api.config.settings import get_settings
+from src.shared_restatify_api.security.wp_api_key_cache import invalidate_wp_api_keys_cache
 from src.app.modules.support_chat.wp_chat_store_bridge import (
     WordPressBridgeConfig,
     WordPressBridgeError,
@@ -23,12 +24,16 @@ _wp_bridge = WordPressChatStoreBridge(
         wp_load_path=settings.wp_load_path,
         store_option_key=settings.wp_chat_store_option_key,
         command_timeout_seconds=settings.wp_bridge_timeout_seconds,
+        db_host_override=settings.wp_db_host_override,
+        db_user_override=settings.wp_db_user_override,
+        db_password_override=settings.wp_db_password_override,
+        db_name_override=settings.wp_db_name_override,
     )
 )
 
 
 class LoginRequest(BaseModel):
-    email: str
+    username: str
     password: str
 
 
@@ -92,7 +97,7 @@ def _decode_session_token(token: str) -> dict:
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest) -> LoginResponse:
     try:
-        result = _wp_bridge.validate_wp_credentials(payload.email, payload.password)
+        result = _wp_bridge.validate_wp_credentials(payload.username, payload.password)
     except WordPressBridgeError as exc:
         raise HTTPException(
             status_code=502,
@@ -134,6 +139,7 @@ def generate_api_key(authorization: str | None = Header(default=None)) -> Genera
 
     try:
         api_key = _wp_bridge.generate_api_key(user_id, user_login)
+        invalidate_wp_api_keys_cache()
     except WordPressBridgeError as exc:
         raise HTTPException(
             status_code=502,
