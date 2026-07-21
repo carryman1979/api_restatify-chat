@@ -1,7 +1,7 @@
 # Redirect HTTP to HTTPS
 server {
     listen 80;
-    server_name api.restatify.tech;
+    server_name api.example.test;
     return 301 https://$host$request_uri;
 }
 
@@ -18,10 +18,10 @@ map $http_upgrade $connection_upgrade {
 
 server {
     listen 443 ssl http2;
-    server_name api.restatify.tech;
+    server_name api.example.test;
 
-    ssl_certificate /etc/letsencrypt/live/api.restatify.tech/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.restatify.tech/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/api.example.test/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.example.test/privkey.pem;
     ssl_session_timeout 1d;
     ssl_session_cache shared:SSL:10m;
     ssl_session_tickets off;

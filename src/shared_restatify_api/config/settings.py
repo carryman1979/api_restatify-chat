@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     wp_php_executable: str = "php"
     wp_chat_store_option_key: str = "restatify_ai_multichat_conversations"
     wp_bridge_timeout_seconds: int = 15
+    wp_bridge_base_url: str = ""
+    wp_bridge_api_key: str = ""
     wp_db_host_override: str = ""
     wp_db_user_override: str = ""
     wp_db_password_override: str = ""

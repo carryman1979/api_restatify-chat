@@ -9,7 +9,4 @@ services:
     # Keep API bound locally and expose publicly through reverse proxy TLS.
     ports:
       - "127.0.0.1:8089:8089"
-    volumes:
-      # Mount WordPress root read-only so WP_LOAD_PATH can be absolute inside container.
-      - /var/www/html:/var/www/html:ro
     restart: unless-stopped

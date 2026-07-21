@@ -2,6 +2,8 @@
 
 Public Support Chat API for Restatify support operations.
 
+Current release: v0.2.1
+
 ## Goals
 
 - Provide secure, mobile-friendly support chat endpoints outside WP-Admin.
@@ -16,6 +18,13 @@ Public Support Chat API for Restatify support operations.
 - Support reply, AI mode, booking overlay trigger, and delete operations
 - WebSocket updates for message and conversation events
 - API key middleware with WordPress-backed key validation
+
+## Production Architecture
+
+- The Support API is the public endpoint for mobile and desktop clients.
+- WordPress and the Support API can run on two separate servers with their own public IPs and FQDNs.
+- Production integration uses a private HTTP WordPress bridge for server-to-server operations.
+- The legacy local `wp-load.php` bridge remains a development fallback only.
 
 ## Run (local)
 
@@ -106,8 +115,15 @@ docker compose up --build
 
 - API behavior now follows the WordPress chat store as source of truth.
 - Local Docker setup is Rancher Desktop compatible via `docker compose`.
+- For split-server production, set `WP_BRIDGE_BASE_URL` and `WP_BRIDGE_API_KEY` so the API reaches the private WordPress bridge endpoint.
 
 ## Release Notes
+
+### v0.2.1
+
+- Added HTTP-based private WordPress bridge support for split-server production deployments.
+- Preserved the public Support API endpoint for apps while moving WordPress operations behind a private server-to-server boundary.
+- Added bridge configuration settings and tests for the new remote bridge path.
 
 ### v0.2.0
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 import json
 import os
 import subprocess
@@ -18,10 +19,27 @@ class WordPressBridgeConfig:
     wp_load_path: str
     store_option_key: str
     command_timeout_seconds: int
+    bridge_base_url: str = ""
+    bridge_api_key: str = ""
     db_host_override: str = ""
     db_user_override: str = ""
     db_password_override: str = ""
     db_name_override: str = ""
+
+
+def build_wordpress_bridge_config(settings: Any) -> WordPressBridgeConfig:
+    return WordPressBridgeConfig(
+        php_executable=settings.wp_php_executable,
+        wp_load_path=settings.wp_load_path,
+        store_option_key=settings.wp_chat_store_option_key,
+        command_timeout_seconds=settings.wp_bridge_timeout_seconds,
+        bridge_base_url=getattr(settings, "wp_bridge_base_url", ""),
+        bridge_api_key=getattr(settings, "wp_bridge_api_key", ""),
+        db_host_override=settings.wp_db_host_override,
+        db_user_override=settings.wp_db_user_override,
+        db_password_override=settings.wp_db_password_override,
+        db_name_override=settings.wp_db_name_override,
+    )
 
 
 class WordPressChatStoreBridge:
@@ -179,6 +197,61 @@ class WordPressChatStoreBridge:
         return [str(k["key"]) for k in raw_keys if isinstance(k, dict) and k.get("key")]
 
     def _run_bridge(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self._config.bridge_base_url.strip() != "":
+            return self._run_http_bridge(payload)
+
+        return self._run_local_bridge(payload)
+
+    def _run_http_bridge(self, payload: dict[str, Any]) -> dict[str, Any]:
+        endpoint = self._config.bridge_base_url.rstrip("/") + "/bridge"
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        if self._config.bridge_api_key.strip() != "":
+            headers["X-Restatify-Bridge-Key"] = self._config.bridge_api_key.strip()
+
+        bridge_payload = {
+            **payload,
+            "store_option_key": self._config.store_option_key,
+        }
+
+        try:
+            response = httpx.post(
+                endpoint,
+                json=bridge_payload,
+                headers=headers,
+                timeout=self._config.command_timeout_seconds,
+            )
+        except httpx.RequestError as exc:
+            raise WordPressBridgeError(
+                f"WordPress bridge request failed: {exc}"
+            ) from exc
+
+        try:
+            parsed = response.json()
+        except ValueError as exc:
+            raise WordPressBridgeError(
+                f"Invalid WordPress bridge JSON output: {response.text.strip()}"
+            ) from exc
+
+        if response.status_code >= 400:
+            if isinstance(parsed, dict):
+                message = str(parsed.get("message") or parsed.get("error") or parsed.get("detail") or "WordPress bridge request failed")
+            else:
+                message = "WordPress bridge request failed"
+            raise WordPressBridgeError(message)
+
+        if not isinstance(parsed, dict):
+            raise WordPressBridgeError("WordPress bridge returned invalid payload type.")
+
+        if not parsed.get("ok"):
+            error_message = str(parsed.get("error", "WordPress bridge error"))
+            raise WordPressBridgeError(error_message)
+
+        return parsed
+
+    def _run_local_bridge(self, payload: dict[str, Any]) -> dict[str, Any]:
         wp_load = Path(self._config.wp_load_path)
         if not wp_load.is_absolute():
             cwd_candidate = (Path.cwd() / wp_load).resolve()
