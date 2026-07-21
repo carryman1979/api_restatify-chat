@@ -10,25 +10,16 @@ from pydantic import BaseModel
 from src.shared_restatify_api.config.settings import get_settings
 from src.shared_restatify_api.security.wp_api_key_cache import invalidate_wp_api_keys_cache
 from src.app.modules.support_chat.wp_chat_store_bridge import (
-    WordPressBridgeConfig,
     WordPressBridgeError,
     WordPressChatStoreBridge,
+    build_wordpress_bridge_config,
 )
 
 router = APIRouter()
 settings = get_settings()
 
 _wp_bridge = WordPressChatStoreBridge(
-    WordPressBridgeConfig(
-        php_executable=settings.wp_php_executable,
-        wp_load_path=settings.wp_load_path,
-        store_option_key=settings.wp_chat_store_option_key,
-        command_timeout_seconds=settings.wp_bridge_timeout_seconds,
-        db_host_override=settings.wp_db_host_override,
-        db_user_override=settings.wp_db_user_override,
-        db_password_override=settings.wp_db_password_override,
-        db_name_override=settings.wp_db_name_override,
-    )
+    build_wordpress_bridge_config(settings)
 )
 
 

@@ -33,23 +33,12 @@ def get_valid_wp_api_keys(force_refresh: bool = False) -> frozenset[str]:
         # Import here to avoid circular dependency at module load time.
         from src.shared_restatify_api.config.settings import get_settings
         from src.app.modules.support_chat.wp_chat_store_bridge import (
-            WordPressBridgeConfig,
             WordPressChatStoreBridge,
+            build_wordpress_bridge_config,
         )
 
         cfg = get_settings()
-        bridge = WordPressChatStoreBridge(
-            WordPressBridgeConfig(
-                php_executable=cfg.wp_php_executable,
-                wp_load_path=cfg.wp_load_path,
-                store_option_key=cfg.wp_chat_store_option_key,
-                command_timeout_seconds=cfg.wp_bridge_timeout_seconds,
-                db_host_override=cfg.wp_db_host_override,
-                db_user_override=cfg.wp_db_user_override,
-                db_password_override=cfg.wp_db_password_override,
-                db_name_override=cfg.wp_db_name_override,
-            )
-        )
+        bridge = WordPressChatStoreBridge(build_wordpress_bridge_config(cfg))
         keys = bridge.load_api_keys()
         fresh: frozenset[str] = frozenset(keys)
     except Exception:  # noqa: BLE001

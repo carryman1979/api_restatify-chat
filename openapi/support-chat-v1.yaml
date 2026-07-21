@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: api_restatify-chat
-  version: 0.1.0
+  version: 0.2.1
 servers:
   - url: http://localhost:8089
-  - url: https://api.restatify.tech
+  - url: https://api.example.test
 paths:
   /health:
     get:

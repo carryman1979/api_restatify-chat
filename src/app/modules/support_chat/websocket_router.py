@@ -8,8 +8,8 @@ from starlette.websockets import WebSocketDisconnect
 
 from src.app.modules.support_chat.events import get_event_manager
 from src.app.modules.support_chat.wp_chat_store_bridge import (
-    WordPressBridgeConfig,
     WordPressChatStoreBridge,
+    build_wordpress_bridge_config,
 )
 from src.shared_restatify_api.config.settings import get_settings
 from src.shared_restatify_api.security.api_key import is_valid_api_key
@@ -20,16 +20,7 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 visitor_wp_bridge = WordPressChatStoreBridge(
-    WordPressBridgeConfig(
-        php_executable=settings.wp_php_executable,
-        wp_load_path=settings.wp_load_path,
-        store_option_key=settings.wp_chat_store_option_key,
-        command_timeout_seconds=settings.wp_bridge_timeout_seconds,
-        db_host_override=settings.wp_db_host_override,
-        db_user_override=settings.wp_db_user_override,
-        db_password_override=settings.wp_db_password_override,
-        db_name_override=settings.wp_db_name_override,
-    )
+    build_wordpress_bridge_config(settings)
 )
 
 _store_watcher_task: asyncio.Task[None] | None = None
