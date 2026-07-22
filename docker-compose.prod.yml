@@ -10,3 +10,25 @@ services:
     ports:
       - "127.0.0.1:8089:8089"
     restart: unless-stopped
+
+  caddy-chat:
+    image: caddy:2-alpine
+    container_name: restatify-support-caddy
+    restart: unless-stopped
+    depends_on:
+      - api-chat
+    ports:
+      - "${SUPPORT_API_PUBLIC_BIND_IP}:80:80"
+      - "${SUPPORT_API_PUBLIC_BIND_IP}:443:443"
+      - "${SUPPORT_API_PUBLIC_BIND_IP}:443:443/udp"
+    environment:
+      SUPPORT_API_FQDN: ${SUPPORT_API_FQDN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./deploy/Caddyfile.support-api.example:/etc/caddy/Caddyfile:ro
+      - caddy_support_data:/data
+      - caddy_support_config:/config
+
+volumes:
+  caddy_support_data:
+  caddy_support_config:

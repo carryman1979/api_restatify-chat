@@ -1,0 +1,9 @@
+{
+    email {$ACME_EMAIL}
+}
+
+{$SUPPORT_API_FQDN} {
+    encode zstd gzip
+
+    reverse_proxy api-chat:8089
+}

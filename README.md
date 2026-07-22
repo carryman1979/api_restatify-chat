@@ -99,6 +99,35 @@ Build/start with Docker:
 docker compose up --build
 ```
 
+## Production reverse proxy (dedicated chat Caddy)
+
+Keep Booking API proxy untouched by running a separate Caddy service from this repository.
+
+1. Copy proxy environment template and fill server-local values:
+
+```bash
+cp .env.proxy.example .env.proxy
+```
+
+2. Start API + dedicated Caddy proxy:
+
+```bash
+docker compose --env-file .env.proxy -f docker-compose.prod.yml up -d --build
+```
+
+3. Verify listeners and health:
+
+```bash
+ss -ltnp | egrep '(:443|:8089)'
+curl -fsS http://127.0.0.1:8089/health
+curl -fsS https://api.example.test/health
+```
+
+Notes:
+
+- `SUPPORT_API_PUBLIC_BIND_IP` should be the API server public IP to avoid 443 conflicts with VPN-bound services.
+- `deploy/Caddyfile.support-api.example` proxies TLS traffic to `api-chat:8089` over the Docker network.
+
 ## Endpoints (initial)
 
 - `GET /health`
