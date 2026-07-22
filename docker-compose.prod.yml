@@ -18,9 +18,12 @@ services:
     depends_on:
       - api-chat
     ports:
-      - "${SUPPORT_API_PUBLIC_BIND_IP}:80:80"
-      - "${SUPPORT_API_PUBLIC_BIND_IP}:443:443"
-      - "${SUPPORT_API_PUBLIC_BIND_IP}:443:443/udp"
+      - "${SUPPORT_API_PUBLIC_BIND_IPV4}:80:80"
+      - "${SUPPORT_API_PUBLIC_BIND_IPV4}:443:443"
+      - "${SUPPORT_API_PUBLIC_BIND_IPV4}:443:443/udp"
+      - "[${SUPPORT_API_PUBLIC_BIND_IPV6}]:80:80"
+      - "[${SUPPORT_API_PUBLIC_BIND_IPV6}]:443:443"
+      - "[${SUPPORT_API_PUBLIC_BIND_IPV6}]:443:443/udp"
     environment:
       SUPPORT_API_FQDN: ${SUPPORT_API_FQDN}
       ACME_EMAIL: ${ACME_EMAIL}

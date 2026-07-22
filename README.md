@@ -125,7 +125,7 @@ curl -fsS https://api.example.test/health
 
 Notes:
 
-- `SUPPORT_API_PUBLIC_BIND_IP` should be the API server public IP to avoid 443 conflicts with VPN-bound services.
+- `SUPPORT_API_PUBLIC_BIND_IPV4` and `SUPPORT_API_PUBLIC_BIND_IPV6` should be the API server public addresses to avoid 443 conflicts with VPN-bound services.
 - `deploy/Caddyfile.support-api.example` proxies TLS traffic to `api-chat:8089` over the Docker network.
 
 ## Endpoints (initial)
